@@ -1,0 +1,270 @@
+---
+title: "Model"
+author: "Su Xu"
+date: "2022-11-11"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+#build environment
+library(survival)
+library(ranger)
+library(ggplot2)
+library(dplyr)
+library(ggfortify)
+```
+
+
+## 1. read data, use the complete-data analysis method to censor data
+
+complete-data analysis: simply ignore the censored observations and analyze only the uncensored complete observations.
+
+  - advantage: simplicity
+  
+  - disadvantage: 
+  
+    - loss of efficiency
+    
+    - estimation bias
+    
+```{r}
+# read data
+fly <- read.csv("./data/fly_model_data.csv")
+# convert variable PSI into a factor
+fly %>% mutate(PSI = as.factor(PSI)) -> fly
+# only keep data that is not censored.
+fly %>% filter(status == 1) -> fly1
+```
+
+### 1.1 Kaplan Meier Model
+
+The simplest KM model, doesn't consider the effect of PSI and age
+
+```{r}
+km <- with(fly1, Surv(survival.time, status))
+#simplest KM model
+km_fit1 <- survfit(Surv(survival.time, status) ~ 1, data=fly1)
+autoplot(km_fit1) +
+  ylab("Survival Rate") +
+  scale_x_continuous(name = "Time (in day)",
+                     breaks = seq(from = 0, to = 25, by = 5)) +
+  ggtitle("Simple Kaplan Meier Model") +
+  theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+### 1.2 KM model with the effect of age group
+
+```{r}
+km_fit2 <- survfit(Surv(survival.time, status) ~ age_group, data=fly1)
+autoplot(km_fit2) +
+  ylab("Survival Rate") +
+  scale_x_continuous(name = "Time (in day)",
+                     breaks = seq(from = 0, to = 25, by = 5)) +
+  ggtitle("Kaplan Meier Model for Age Groups") +
+  labs(fill = "Age Group",
+       color = "Age Group") +
+  theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+### 1.3 KM model with the effect of PSI group
+
+```{r}
+km_fit3 <- survfit(Surv(survival.time, status) ~ PSI, data=fly1)
+autoplot(km_fit3) +
+  facet_wrap(~ strata) +
+  ylab("Survival Rate") +
+  scale_x_continuous(name = "Time (in day)",
+                     breaks = seq(from = 0, to = 25, by = 5)) +
+  ggtitle("Kaplan Meier Model for PSI Groups") +
+  labs(fill = "PSI",
+       color = "PSI") +
+  theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+### 1.4 KM model with the effect of both age group and PSI group
+
+```{r,fig.height=5, fig.width=5}
+#KM model for both PSI and age groups
+km_fit4 <- survfit(Surv(survival.time, status) ~ PSI + age_group, data=fly1)
+autoplot(km_fit4) +
+  facet_wrap(~ strata,
+             nrow = 4,
+             ncol = 2) +
+  ylab("Survival Rate") +
+  scale_x_continuous(name = "Time (in day)",
+                     breaks = seq(from = 0, to = 25, by = 5)) +
+  ggtitle("Kaplan Meier Model for PSI and Age Groups") +
+  labs(fill = "status",
+       color = "status") +
+  theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5)) -> km_fit4_plot
+km_fit4_plot
+```
+
+### 1.5 cox proportional hazards model
+
+#### 1.5.1 fit the model
+
+```{r}
+cox_ph <- coxph(Surv(survival.time, status) ~ PSI + age_group, data=fly1)
+cox_fit <- survfit(cox_ph)
+summary(cox_fit)
+```
+
+#### 1.5.2 draw the model
+```{r}
+autoplot(cox_fit)
+```
+
+### 1.6 compare the result from KM model and Cox model
+```{r}
+kmi <- rep("KM",length(km_fit1$time))
+km_df <- data.frame(km_fit1$time,km_fit1$surv,kmi)
+names(km_df) <- c("Time","Surv","Model")
+
+coxi <- rep("Cox",length(cox_fit$time))
+cox_df <- data.frame(cox_fit$time,cox_fit$surv, coxi)
+names(cox_df) <- c("Time","Surv","Model")
+
+plot_df <- rbind(km_df,cox_df)
+
+p <- ggplot(plot_df, aes(x = Time, y = Surv, color = Model))
+p + 
+  geom_line() +
+  ylab("Survival Rate") +
+  scale_x_continuous(name = "Time (in day)",
+                     breaks = seq(from = 0, to = 25, by = 5)) +
+  ggtitle("Kaplan Meier Model vs. Cox Proportional Hazards Model") +
+  labs(fill = "status",
+       color = "status") +
+  theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+## 2. use the left-point imputation approach method to censor the data
+
+left-point imputation approach: assuming all censored cases fail right after the time of censoring, a kind of method of right censoring.
+
+disadvantage: may cause underestimate.
+
+the experiment ended in 28 days, there are two kinds of flies' death situation that were not observed. First, in group A1 and B1, the researcher forget to document, which can be considered as loss-to-follow-up censoring. Second, there are many flies were still alive after the experiment was ended, so their death day cannot be observed, this can be considered as end-of-study censoring. Both situation can be censored by "right censoring", which we assuming all censored cases fail right after the time of censoring, in our case, is 28.
+
+```{r}
+fly %>% 
+  mutate(survival.time = ifelse(fly$status == 0, 28, survival.time)) -> fly2
+```
+
+### 2.1 Kaplan Meier Model
+
+The simplest KM model, doesn't consider the effect of PSI and age
+
+```{r}
+km <- with(fly2, Surv(survival.time, status))
+#simplest KM model
+km_fit5 <- survfit(Surv(survival.time, status) ~ 1, data=fly2)
+autoplot(km_fit5) +
+  ylab("Survival Rate") +
+  scale_x_continuous(name = "Time (in day)",
+                     breaks = seq(from = 0, to = 25, by = 5)) +
+  ggtitle("Simple Kaplan Meier Model") +
+  theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+### 2.2 KM model with the effect of age group
+
+```{r}
+km_fit6 <- survfit(Surv(survival.time, status) ~ age_group, data=fly2)
+autoplot(km_fit6) +
+  ylab("Survival Rate") +
+  scale_x_continuous(name = "Time (in day)",
+                     breaks = seq(from = 0, to = 25, by = 5)) +
+  ggtitle("Kaplan Meier Model for Age Groups") +
+  labs(fill = "Age Group",
+       color = "Age Group") +
+  theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+### 2.3 KM model with the effect of PSI group
+
+```{r}
+km_fit7 <- survfit(Surv(survival.time, status) ~ PSI, data=fly2)
+autoplot(km_fit7) +
+  facet_wrap(~ strata) +
+  ylab("Survival Rate") +
+  scale_x_continuous(name = "Time (in day)",
+                     breaks = seq(from = 0, to = 25, by = 5)) +
+  ggtitle("Kaplan Meier Model for PSI Groups") +
+  labs(fill = "PSI",
+       color = "PSI") +
+  theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+### 2.4 KM model with the effect of both age group and PSI group
+
+```{r,fig.height=5, fig.width=5}
+#KM model for both PSI and age groups
+km_fit8 <- survfit(Surv(survival.time, status) ~ PSI + age_group, data=fly2)
+autoplot(km_fit8) +
+  facet_wrap(~ strata,
+             nrow = 4,
+             ncol = 2) +
+  ylab("Survival Rate") +
+  scale_x_continuous(name = "Time (in day)",
+                     breaks = seq(from = 0, to = 25, by = 5)) +
+  ggtitle("Kaplan Meier Model for PSI and Age Groups") +
+  labs(fill = "status",
+       color = "status") +
+  theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5)) -> km_fit8_plot
+km_fit8_plot
+```
+
+### 2.5 cox proportional hazards model
+
+#### 2.5.1 fit the model
+
+```{r}
+cox_ph2 <- coxph(Surv(survival.time, status) ~ PSI + age_group, data=fly2)
+cox_fit2 <- survfit(cox_ph2)
+summary(cox_fit2)
+```
+
+#### 1.5.2 draw the model
+```{r}
+autoplot(cox_fit2)
+```
+
+### 2.6 compare the result from KM model and Cox model
+```{r}
+kmi <- rep("KM",length(km_fit5$time))
+km_df <- data.frame(km_fit5$time,km_fit5$surv,kmi)
+names(km_df) <- c("Time","Surv","Model")
+
+coxi <- rep("Cox",length(cox_fit2$time))
+cox_df <- data.frame(cox_fit2$time,cox_fit2$surv, coxi)
+names(cox_df) <- c("Time","Surv","Model")
+
+plot_df <- rbind(km_df,cox_df)
+
+p <- ggplot(plot_df, aes(x = Time, y = Surv, color = Model))
+p + 
+  geom_line() +
+  ylab("Survival Rate") +
+  scale_x_continuous(name = "Time (in day)",
+                     breaks = seq(from = 0, to = 25, by = 5)) +
+  ggtitle("Kaplan Meier Model vs. Cox Proportional Hazards Model") +
+  labs(fill = "status",
+       color = "status") +
+  theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5))
+```

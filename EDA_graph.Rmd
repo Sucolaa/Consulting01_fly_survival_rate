@@ -1,0 +1,133 @@
+---
+title: "EDA graph"
+author: "Su Xu"
+date: "2022-10-25"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(readxl)
+```
+
+```{r}
+#read data
+fly <- read.csv("./data/experiment_data_tidied.csv")
+#round data into three decimals
+fly %>% 
+  mutate(survival_rate_under_psi = round(survival_rate_under_psi,3),
+         survival_rate_under_psi_24h = round(survival_rate_under_psi_24h,3)) -> fly
+#the experiment of old group start at the fourth day of the experiment of young group, to make the plot reasonable, add all day of old group by 3.
+fly$day[113:237] <- fly$day[113:237] + 3
+```
+
+
+## 1. Death Plot: Young group
+
+```{r}
+fly %>% 
+  filter(age_group == "young") %>% 
+ggplot(aes(x = as.factor(day), 
+           y = as.factor(death),
+           group = PSI,
+           color = as.factor(PSI))) +
+  geom_line() +
+  labs(color = "PSI") +
+  xlab("day") +
+  ylab("death") +
+  ggtitle("Young Group Death") +
+  theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+
+## 2. death plot: old group
+
+```{r}
+fly %>% 
+  filter(age_group == "old",
+         test_group != "E_control") %>% 
+ggplot(aes(x = as.factor(day), 
+           y = as.factor(death),
+           group = PSI,
+           color = as.factor(PSI))) +
+  geom_line() +
+  labs(color = "PSI") +
+  xlab("day") +
+  ylab("death") +
+  ggtitle("Old Group Death") +
+  theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+## 3. death plot for young and old group under different PSI (control group is deleted)
+
+```{r}
+fly %>% 
+  filter(test_group != "E_control") %>% 
+ggplot(aes(x = as.factor(day), 
+           y = as.factor(death),
+           group = test_group,
+           color = age_group)) +
+  geom_line() +
+  labs(color = "age group") +
+  scale_color_discrete(labels = c("old",
+                                  "young"))+
+  xlab("day") +
+  ylab("death") +
+  ggtitle("Death") +
+  theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  facet_wrap(~ PSI) +
+  theme(axis.text.x = element_text(angle = 30,
+                                   size = 6))
+```
+
+
+## 4. survival rate plot for young and old group under different PSI
+
+```{r}
+fly %>% 
+  filter(test_group != "E_control") %>% 
+ggplot(aes(x = as.factor(day), 
+           y = as.numeric(survival_rate_under_psi),
+           group = test_group,
+           color = age_group)) +
+  geom_line() +
+  labs(color = "age group") +
+  scale_color_discrete(labels = c("old",
+                                  "young"))+
+  xlab("day") +
+  ylab("Survival Rate") +
+  ggtitle("Survival Rate") +
+  theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  facet_wrap(~ PSI) +
+  theme(axis.text.x = element_text(angle = 30,
+                                   size = 6))
+```
+
+## 5. survival rate plot for young and old group under different PSI, exclude death in the first day
+
+```{r}
+fly %>% 
+  filter(test_group != "E_control") %>% 
+ggplot(aes(x = as.factor(day), 
+           y = survival_rate_under_psi_24h,
+           group = test_group,
+           color = age_group)) +
+  geom_line() +
+  labs(color = "age group") +
+  scale_color_discrete(labels = c("old",
+                                  "young"))+
+  xlab("day") +
+  ylab("Survival Rate") +
+  ggtitle("Survival Rate(without death in 1st day)") +
+  theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  facet_wrap(~ PSI) +
+  theme(axis.text.x = element_text(angle = 30,
+                                   size = 6))
+```
+
